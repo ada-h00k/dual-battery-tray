@@ -9,12 +9,14 @@ mod tray;
 use anyhow::{Context, Result};
 use config::Config;
 use keychron::KeychronReader;
-use notifications::LowBatteryNotifier;
 use openlinkhub::OpenLinkHubReader;
+use notifications::LowBatteryNotifier;
 use state::Snapshot;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::sync::Notify;
 use tokio::time::{interval, MissedTickBehavior};
 use tracing::{error, info, warn};
 
@@ -38,10 +40,15 @@ async fn main() -> Result<()> {
     let refresh = Duration::from_secs(config.refresh_seconds().max(5));
     let low_battery_threshold = config.low_battery_threshold();
     let snapshot = Snapshot::default();
-    let tray = tray::BatteryTray::new(snapshot.clone(), low_battery_threshold);
-    let handle = tray::spawn(tray)
-        .await
-        .context("could not create system tray")?;
+    let refresh_notify = Arc::new(Notify::new());
+    let (keyboard_refresh_tx, keyboard_refresh_rx) = std::sync::mpsc::channel::<()>();
+    let tray = tray::BatteryTray::new(
+        snapshot.clone(),
+        low_battery_threshold,
+        refresh_notify.clone(),
+        keyboard_refresh_tx.clone(),
+    );
+    let handle = tray::spawn(tray).await.context("could not create system tray")?;
 
     let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
     let mut headset_ticker = interval(refresh);
@@ -50,8 +57,11 @@ async fn main() -> Result<()> {
     // The HID side owns one dedicated blocking thread. It opens the HID device
     // once and keeps it open, avoiding a fresh hidapi enumeration every poll.
     let (keyboard_tx, mut keyboard_rx) = mpsc::unbounded_channel();
-    let _keyboard_worker =
-        KeychronReader::new(config.keyboard.clone())?.spawn_worker(refresh, keyboard_tx);
+    let _keyboard_worker = KeychronReader::new(config.keyboard.clone())?.spawn_worker(
+        refresh,
+        keyboard_tx,
+        keyboard_refresh_rx,
+    );
 
     info!(
         refresh_seconds = refresh.as_secs(),
@@ -68,13 +78,13 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             _ = headset_ticker.tick() => {
-                match openlink.read().await {
-                    Ok(value) => current.headset = value,
-                    Err(e) => {
-                        warn!(error = %e, "OpenLinkHub read failed");
-                        current.headset.error = Some(e.to_string());
-                    }
+                refresh_headset(&openlink, &mut current).await;
+                if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
+                    return Ok(());
                 }
+            }
+            _ = refresh_notify.notified() => {
+                refresh_headset(&openlink, &mut current).await;
                 if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
                     return Ok(());
                 }
@@ -85,6 +95,16 @@ async fn main() -> Result<()> {
                     return Ok(());
                 }
             }
+        }
+    }
+}
+
+async fn refresh_headset(openlink: &OpenLinkHubReader, current: &mut Snapshot) {
+    match openlink.read().await {
+        Ok(value) => current.headset = value,
+        Err(e) => {
+            warn!(error = %e, "OpenLinkHub read failed");
+            current.headset.error = Some(e.to_string());
         }
     }
 }
@@ -102,11 +122,7 @@ async fn update_if_changed(
     let changed = !*has_sent || last_sent != current;
     if changed {
         let next = current.clone();
-        if handle
-            .update(move |tray| tray.snapshot = next)
-            .await
-            .is_none()
-        {
+        if handle.update(move |tray| tray.snapshot = next).await.is_none() {
             error!("tray service has been shut down");
             return Some(());
         }
