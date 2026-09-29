@@ -165,8 +165,15 @@ impl KeychronReader {
     }
 
     fn parse_battery_response(bytes: &[u8]) -> Result<BatteryResponse> {
-        let payload = if bytes.len() >= 33 && bytes[0] == 0 {
-            &bytes[1..33]
+        // hidapi may return an explicit report-id byte for some interfaces.
+        // A zero report ID is not part of the Keychron payload, so strip it
+        // when it is followed by a plausible Keychron battery command.
+        let encoded_command = KEYCHRON_GET_BATTERY ^ WIRELESS_RAW_HID_XOR_KEY;
+        let payload = if bytes.len() >= 3
+            && bytes[0] == 0
+            && (bytes[1] == KEYCHRON_GET_BATTERY || bytes[1] == encoded_command)
+        {
+            &bytes[1..]
         } else {
             bytes
         };
@@ -179,7 +186,6 @@ impl KeychronReader {
         }
 
         let command = payload[0];
-        let encoded_command = KEYCHRON_GET_BATTERY ^ WIRELESS_RAW_HID_XOR_KEY;
         let percent = if command == KEYCHRON_GET_BATTERY || command == encoded_command {
             payload[1]
         } else {
