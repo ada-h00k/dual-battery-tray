@@ -9,8 +9,8 @@ mod tray;
 use anyhow::{Context, Result};
 use config::Config;
 use keychron::KeychronReader;
-use openlinkhub::OpenLinkHubReader;
 use notifications::LowBatteryNotifier;
+use openlinkhub::OpenLinkHubReader;
 use state::Snapshot;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -39,7 +39,9 @@ async fn main() -> Result<()> {
     let low_battery_threshold = config.low_battery_threshold();
     let snapshot = Snapshot::default();
     let tray = tray::BatteryTray::new(snapshot.clone(), low_battery_threshold);
-    let handle = tray::spawn(tray).await.context("could not create system tray")?;
+    let handle = tray::spawn(tray)
+        .await
+        .context("could not create system tray")?;
 
     let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
     let mut headset_ticker = interval(refresh);
@@ -48,7 +50,8 @@ async fn main() -> Result<()> {
     // The HID side owns one dedicated blocking thread. It opens the HID device
     // once and keeps it open, avoiding a fresh hidapi enumeration every poll.
     let (keyboard_tx, mut keyboard_rx) = mpsc::unbounded_channel();
-    let _keyboard_worker = KeychronReader::new(config.keyboard.clone())?.spawn_worker(refresh, keyboard_tx);
+    let _keyboard_worker =
+        KeychronReader::new(config.keyboard.clone())?.spawn_worker(refresh, keyboard_tx);
 
     info!(
         refresh_seconds = refresh.as_secs(),
@@ -99,7 +102,11 @@ async fn update_if_changed(
     let changed = !*has_sent || last_sent != current;
     if changed {
         let next = current.clone();
-        if handle.update(move |tray| tray.snapshot = next).await.is_none() {
+        if handle
+            .update(move |tray| tray.snapshot = next)
+            .await
+            .is_none()
+        {
             error!("tray service has been shut down");
             return Some(());
         }
