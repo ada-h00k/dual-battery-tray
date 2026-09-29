@@ -1,0 +1,13 @@
+[Unit]
+Description=Dual Battery Tray (OpenLinkHub + Keychron K2 HE)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/dual-battery-tray --config %h/.config/dual-battery-tray/config.toml
+Restart=on-failure
+RestartSec=2
+Environment=RUST_LOG=dual_battery_tray=info
+
+[Install]
+WantedBy=graphical-session.target
