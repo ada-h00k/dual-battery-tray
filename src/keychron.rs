@@ -197,8 +197,14 @@ impl KeychronReader {
         }
 
         let command = payload[0];
-        let percent = if command == KEYCHRON_GET_BATTERY || command == encoded_command {
+        let percent = if command == KEYCHRON_GET_BATTERY {
+            // Wired/direct Keychron raw-HID response.
             payload[1]
+        } else if command == encoded_command {
+            // Keychron Link wireless tunnel: the complete payload is XORed with
+            // 0x28. The command 0xAC therefore appears as 0x84, and the battery
+            // percentage byte must be decoded with the same key.
+            payload[1] ^ WIRELESS_RAW_HID_XOR_KEY
         } else {
             return Err(anyhow!(
                 "no Keychron 0xAC battery response (got {})",
@@ -207,10 +213,6 @@ impl KeychronReader {
         };
 
         if percent > 100 {
-            let decoded = percent ^ WIRELESS_RAW_HID_XOR_KEY;
-            if decoded <= 100 {
-                return Ok(BatteryResponse { percent: decoded });
-            }
             return Err(anyhow!(
                 "invalid battery percentage {percent} in Keychron 0xAC response (got {})",
                 hex(bytes)
@@ -323,14 +325,22 @@ mod tests {
 
     #[test]
     fn parses_observed_keychron_link_battery_response() {
-        let response = [0x84, 0x43, 0x00, 0x00];
+        // 62% is 0x3E; over the Keychron Link tunnel it becomes 0x16.
+        let response = [0x84, 0x16, 0x00, 0x00];
         let value = KeychronReader::parse_battery_response(&response).unwrap();
-        assert_eq!(value.percent, 67);
+        assert_eq!(value.percent, 62);
     }
 
     #[test]
     fn parses_zero_report_id_variant() {
-        let response = [0x00, 0x84, 0x43, 0x00];
+        let response = [0x00, 0x84, 0x16, 0x00];
+        let value = KeychronReader::parse_battery_response(&response).unwrap();
+        assert_eq!(value.percent, 62);
+    }
+
+    #[test]
+    fn parses_direct_battery_response() {
+        let response = [0xAC, 0x43, 0x00, 0x00];
         let value = KeychronReader::parse_battery_response(&response).unwrap();
         assert_eq!(value.percent, 67);
     }
