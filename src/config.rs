@@ -1,8 +1,8 @@
+use crate::notifications::DEFAULT_LOW_BATTERY_THRESHOLD;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
-use crate::notifications::DEFAULT_LOW_BATTERY_THRESHOLD;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -50,7 +50,9 @@ pub struct KeyboardConfig {
 
 impl Config {
     pub fn load(path: Option<&Path>) -> Result<Self> {
-        let Some(path) = path else { return Ok(Self::default()) };
+        let Some(path) = path else {
+            return Ok(Self::default());
+        };
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -59,9 +61,13 @@ impl Config {
         toml::from_str(&text).with_context(|| format!("invalid TOML in {}", path.display()))
     }
 
-    pub fn refresh_seconds(&self) -> u64 { self.refresh_seconds.max(60) }
+    pub fn refresh_seconds(&self) -> u64 {
+        self.refresh_seconds.max(60)
+    }
 
-    pub fn low_battery_threshold(&self) -> u8 { self.low_battery_threshold.min(100) }
+    pub fn low_battery_threshold(&self) -> u8 {
+        self.low_battery_threshold.min(100)
+    }
 }
 
 impl Default for Config {
@@ -77,7 +83,10 @@ impl Default for Config {
 
 impl Default for OpenLinkHubConfig {
     fn default() -> Self {
-        Self { base_url: default_base_url(), device_match: None }
+        Self {
+            base_url: default_base_url(),
+            device_match: None,
+        }
     }
 }
 
@@ -98,15 +107,39 @@ impl Default for KeyboardConfig {
     }
 }
 
-fn default_refresh() -> u64 { 600 }
-fn default_low_battery_threshold() -> u8 { DEFAULT_LOW_BATTERY_THRESHOLD }
-fn default_base_url() -> String { "http://127.0.0.1:27003".into() }
-fn default_true() -> bool { true }
-fn default_vid() -> u16 { 0x3434 }
-fn default_pid() -> u16 { 0x0E21 }
-fn default_link_vid() -> u16 { 0x3434 }
-fn default_receiver_pids() -> Vec<u16> { vec![0xD026, 0xD027, 0xD030, 0xD031] }
-fn default_usage_page() -> u16 { 0xFF60 }
-fn default_usage() -> u16 { 0x61 }
-fn default_protocol() -> String { "auto".into() }
-fn default_timeout_ms() -> i32 { 800 }
+fn default_refresh() -> u64 {
+    600
+}
+fn default_low_battery_threshold() -> u8 {
+    DEFAULT_LOW_BATTERY_THRESHOLD
+}
+fn default_base_url() -> String {
+    "http://127.0.0.1:27003".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_vid() -> u16 {
+    0x3434
+}
+fn default_pid() -> u16 {
+    0x0E21
+}
+fn default_link_vid() -> u16 {
+    0x3434
+}
+fn default_receiver_pids() -> Vec<u16> {
+    vec![0xD026, 0xD027, 0xD030, 0xD031]
+}
+fn default_usage_page() -> u16 {
+    0xFF60
+}
+fn default_usage() -> u16 {
+    0x61
+}
+fn default_protocol() -> String {
+    "auto".into()
+}
+fn default_timeout_ms() -> i32 {
+    800
+}
