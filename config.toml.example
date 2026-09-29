@@ -1,0 +1,31 @@
+# Update interval in seconds.
+refresh_seconds = 600
+
+# Desktop notification when a device drops strictly below this percentage.
+# A notification is sent once per low-battery episode and re-armed at/above the threshold.
+low_battery_threshold = 20
+
+[openlinkhub]
+base_url = "http://127.0.0.1:27003"
+# Optional: only use the OpenLinkHub device whose name contains this text.
+# device_match = "HS80"
+
+[keyboard]
+enabled = true
+keyboard_vid = 0x3434
+keyboard_pid = 0x0E21
+
+# Keychron Link 2.4 GHz receiver.
+receiver_vid = 0x3434
+receiver_pids = [0xD026, 0xD027, 0xD030, 0xD031]
+usage_page = 0xFF60
+usage = 0x61
+
+# The current hidraw number can change after reconnects. The program first tries
+# this path, then automatically discovers the receiver by VID/PID/usage.
+hidraw_path = "/dev/hidraw5"
+
+# The Tymon3310 vial-updated-keychron firmware uses 0xAC for battery.
+# Keychron Link raw-HID traffic is XOR-encoded with 0x28 internally by the firmware.
+protocol = "keychron-ac"
+timeout_ms = 800
