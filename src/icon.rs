@@ -10,30 +10,14 @@ const RED_64: &[u8] = include_bytes!("../assets/battery-red-64.argb");
 
 pub fn white() -> Vec<Icon> {
     vec![
-        Icon {
-            width: 32,
-            height: 32,
-            data: WHITE_32.to_vec(),
-        },
-        Icon {
-            width: 64,
-            height: 64,
-            data: WHITE_64.to_vec(),
-        },
+        Icon { width: 32, height: 32, data: WHITE_32.to_vec() },
+        Icon { width: 64, height: 64, data: WHITE_64.to_vec() },
     ]
 }
 
 pub fn red() -> Vec<Icon> {
     vec![
-        Icon {
-            width: 32,
-            height: 32,
-            data: RED_32.to_vec(),
-        },
-        Icon {
-            width: 64,
-            height: 64,
-            data: RED_64.to_vec(),
-        },
+        Icon { width: 32, height: 32, data: RED_32.to_vec() },
+        Icon { width: 64, height: 64, data: RED_64.to_vec() },
     ]
 }

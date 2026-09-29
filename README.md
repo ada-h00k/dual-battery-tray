@@ -119,3 +119,7 @@ When **either** monitored device falls strictly below `low_battery_threshold` (2
 ## License
 
 This project is licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE).
+
+## Features
+
+- Force-refresh both devices immediately from the tray menu.
