@@ -1,6 +1,6 @@
 [package]
 name = "dual-battery-tray"
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 rust-version = "1.80"
 description = "Linux tray monitor for an OpenLinkHub headset and a Keychron K2 HE over Keychron Link"
