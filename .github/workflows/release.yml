@@ -1,0 +1,87 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Linux x86_64 release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev libudev-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Verify formatting
+        run: cargo fmt --all -- --check
+
+      - name: Verify package version matches tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          tag_version="${RELEASE_TAG#v}"
+
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "Cargo package version ($package_version) does not match release tag ($RELEASE_TAG)."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: cargo test --release
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          package_name="dual-battery-tray-${RELEASE_TAG}-linux-x86_64"
+          package_dir="$RUNNER_TEMP/$package_name"
+          archive="$RUNNER_TEMP/${package_name}.tar.gz"
+          checksum="$RUNNER_TEMP/${package_name}.sha256"
+
+          mkdir -p "$package_dir/systemd" "$package_dir/udev"
+
+          install -Dm755 target/release/dual-battery-tray "$package_dir/dual-battery-tray"
+          install -Dm644 README.md "$package_dir/README.md"
+          install -Dm644 LICENSE "$package_dir/LICENSE"
+          install -Dm644 config.toml.example "$package_dir/config.toml.example"
+          install -Dm644 systemd/dual-battery-tray.service "$package_dir/systemd/dual-battery-tray.service"
+          install -Dm644 udev/70-dual-battery-tray-keychron.rules "$package_dir/udev/70-dual-battery-tray-keychron.rules"
+
+          tar -C "$RUNNER_TEMP" -czf "$archive" "$package_name"
+          sha256sum "$archive" > "$checksum"
+
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "CHECKSUM=$checksum" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --title "$RELEASE_TAG" \
+            --generate-notes \
+            "$ARCHIVE" \
+            "$CHECKSUM"
