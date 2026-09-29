@@ -49,8 +49,7 @@ impl KeychronReader {
                         .and_then(|new_api| {
                             self.open_device(&new_api)
                                 .map(|(device, wireless)| (new_api, device, wireless))
-                        })
-                    {
+                        }) {
                         Ok(opened) => connection = Some(opened),
                         Err(error) => {
                             let _ = tx.send(DeviceState {
@@ -60,16 +59,18 @@ impl KeychronReader {
                             });
                             let wait = refresh.min(Duration::from_secs(30));
                             match force_refresh_rx.recv_timeout(wait) {
-                                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                                Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                                    continue
+                                }
                                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
                             }
                         }
                     }
                 }
 
-                let read_result = connection
-                    .as_ref()
-                    .map(|(_, device, wireless_tunnel)| self.read_from_device(device, *wireless_tunnel));
+                let read_result = connection.as_ref().map(|(_, device, wireless_tunnel)| {
+                    self.read_from_device(device, *wireless_tunnel)
+                });
 
                 match read_result {
                     Some(Ok(state)) => {
@@ -189,7 +190,10 @@ impl KeychronReader {
         };
 
         if payload.len() < 2 {
-            return Err(anyhow!("Keychron 0xAC response is truncated (got {})", hex(bytes)));
+            return Err(anyhow!(
+                "Keychron 0xAC response is truncated (got {})",
+                hex(bytes)
+            ));
         }
 
         let command = payload[0];

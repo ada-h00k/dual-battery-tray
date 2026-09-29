@@ -9,8 +9,8 @@ mod tray;
 use anyhow::{Context, Result};
 use config::Config;
 use keychron::KeychronReader;
-use openlinkhub::OpenLinkHubReader;
 use notifications::LowBatteryNotifier;
+use openlinkhub::OpenLinkHubReader;
 use state::Snapshot;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,7 +48,9 @@ async fn main() -> Result<()> {
         refresh_notify.clone(),
         keyboard_refresh_tx.clone(),
     );
-    let handle = tray::spawn(tray).await.context("could not create system tray")?;
+    let handle = tray::spawn(tray)
+        .await
+        .context("could not create system tray")?;
 
     let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
     let mut headset_ticker = interval(refresh);
@@ -122,7 +124,11 @@ async fn update_if_changed(
     let changed = !*has_sent || last_sent != current;
     if changed {
         let next = current.clone();
-        if handle.update(move |tray| tray.snapshot = next).await.is_none() {
+        if handle
+            .update(move |tray| tray.snapshot = next)
+            .await
+            .is_none()
+        {
             error!("tray service has been shut down");
             return Some(());
         }

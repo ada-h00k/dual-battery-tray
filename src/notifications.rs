@@ -12,12 +12,7 @@ pub struct LowBatteryNotifier {
 
 impl LowBatteryNotifier {
     pub fn check(&mut self, headset: &DeviceState, keyboard: &DeviceState, threshold: u8) {
-        Self::check_device(
-            "Headset",
-            headset,
-            threshold,
-            &mut self.headset_notified,
-        );
+        Self::check_device("Headset", headset, threshold, &mut self.headset_notified);
         Self::check_device(
             "Keychron K2 HE",
             keyboard,
