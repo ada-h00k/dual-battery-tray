@@ -11,7 +11,10 @@ pub struct BatteryTray {
 
 impl BatteryTray {
     pub fn new(snapshot: Snapshot, low_battery_threshold: u8) -> Self {
-        Self { snapshot, low_battery_threshold }
+        Self {
+            snapshot,
+            low_battery_threshold,
+        }
     }
 
     fn is_low(&self) -> bool {
@@ -23,9 +26,13 @@ impl BatteryTray {
 impl Tray for BatteryTray {
     const MENU_ON_ACTIVATE: bool = true;
 
-    fn id(&self) -> String { "dual-battery-tray".into() }
+    fn id(&self) -> String {
+        "dual-battery-tray".into()
+    }
 
-    fn category(&self) -> ksni::Category { ksni::Category::Hardware }
+    fn category(&self) -> ksni::Category {
+        ksni::Category::Hardware
+    }
 
     fn status(&self) -> ksni::Status {
         if self.is_low() {
@@ -36,7 +43,9 @@ impl Tray for BatteryTray {
     }
 
     // Let KDE/Breeze-dark provide the normal battery icon.
-    fn icon_name(&self) -> String { "battery".into() }
+    fn icon_name(&self) -> String {
+        "battery".into()
+    }
 
     // Prefer the installed Breeze-dark theme when it is present. This keeps the
     // normal icon as KDE's own artwork instead of forcing a bundled redraw.
@@ -53,14 +62,22 @@ impl Tray for BatteryTray {
 
     // ARGB pixmaps are retained as a fallback for tray hosts that do not load
     // the themed icon.
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> { icon::white() }
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        icon::white()
+    }
 
     // When low battery needs attention, provide an explicit red version so the
     // visual state does not depend on the current desktop theme's warning color.
-    fn attention_icon_pixmap(&self) -> Vec<ksni::Icon> { icon::red() }
+    fn attention_icon_pixmap(&self) -> Vec<ksni::Icon> {
+        icon::red()
+    }
 
     fn title(&self) -> String {
-        format!("{} / {}", fmt_pct(self.snapshot.headset.percent), fmt_pct(self.snapshot.keyboard.percent))
+        format!(
+            "{} / {}",
+            fmt_pct(self.snapshot.headset.percent),
+            fmt_pct(self.snapshot.keyboard.percent)
+        )
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
@@ -77,12 +94,20 @@ impl Tray for BatteryTray {
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         let headset = StandardItem {
-            label: format!("Headset: {}{}", fmt_pct(self.snapshot.headset.percent), charging_suffix(self.snapshot.headset.charging)),
+            label: format!(
+                "Headset: {}{}",
+                fmt_pct(self.snapshot.headset.percent),
+                charging_suffix(self.snapshot.headset.charging)
+            ),
             enabled: false,
             ..Default::default()
         };
         let keyboard = StandardItem {
-            label: format!("Keychron K2 HE: {}{}", fmt_pct(self.snapshot.keyboard.percent), charging_suffix(self.snapshot.keyboard.charging)),
+            label: format!(
+                "Keychron K2 HE: {}{}",
+                fmt_pct(self.snapshot.keyboard.percent),
+                charging_suffix(self.snapshot.keyboard.charging)
+            ),
             enabled: false,
             ..Default::default()
         };
@@ -113,8 +138,18 @@ pub async fn spawn(tray: BatteryTray) -> Result<ksni::Handle<BatteryTray>, ksni:
 
 impl BatteryTray {
     fn status_line(&self) -> String {
-        let h = self.snapshot.headset.error.as_deref().unwrap_or("OpenLinkHub: OK");
-        let k = self.snapshot.keyboard.error.as_deref().unwrap_or("Keyboard: OK");
+        let h = self
+            .snapshot
+            .headset
+            .error
+            .as_deref()
+            .unwrap_or("OpenLinkHub: OK");
+        let k = self
+            .snapshot
+            .keyboard
+            .error
+            .as_deref()
+            .unwrap_or("Keyboard: OK");
         format!("{h} · {k}")
     }
 }
@@ -128,5 +163,9 @@ fn fmt_pct(value: Option<u8>) -> String {
 }
 
 fn charging_suffix(value: Option<bool>) -> &'static str {
-    if value == Some(true) { " ⚡" } else { "" }
+    if value == Some(true) {
+        " ⚡"
+    } else {
+        ""
+    }
 }
