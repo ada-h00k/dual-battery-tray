@@ -119,7 +119,9 @@ async fn update_if_changed(
     low_battery: &mut LowBatteryNotifier,
     threshold: u8,
 ) -> Option<()> {
-    low_battery.check(&current.headset, &current.keyboard, threshold);
+    low_battery
+    .check(&current.headset, &current.keyboard, threshold)
+    .await;
 
     let changed = !*has_sent || last_sent != current;
     if changed {
