@@ -1,210 +1,180 @@
-use crate::icon;
-use crate::state::Snapshot;
-use ksni::{menu::StandardItem, Tray, TrayMethods};
-use std::path::Path;
-use std::sync::{mpsc::Sender, Arc};
+mod config;
+mod icon;
+mod keychron;
+mod notifications;
+mod openlinkhub;
+mod state;
+mod tray;
+
+use anyhow::{Context, Result};
+use config::Config;
+use keychron::KeychronReader;
+use notifications::LowBatteryNotifier;
+use openlinkhub::OpenLinkHubReader;
+use state::Snapshot;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::sync::Notify;
+use tokio::time::{interval, MissedTickBehavior};
+use tracing::{error, info, warn};
 
-#[derive(Debug, Clone)]
-pub struct BatteryTray {
-    pub snapshot: Snapshot,
-    pub low_battery_threshold: u8,
-    refresh_notify: Arc<Notify>,
-    keyboard_refresh_tx: Sender<()>,
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<()> {
+    init_logging();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let config_path = args
+        .windows(2)
+        .find(|w| w[0] == "--config")
+        .map(|w| PathBuf::from(&w[1]))
+        .or_else(default_config_path);
+
+    let config = Config::load(config_path.as_deref())?;
+
+    if args.iter().any(|a| a == "--probe") {
+        return probe(&config).await;
+    }
+
+    let refresh = Duration::from_secs(config.refresh_seconds().max(5));
+    let low_battery_threshold = config.low_battery_threshold();
+    let snapshot = Snapshot::default();
+    let refresh_notify = Arc::new(Notify::new());
+    let (keyboard_refresh_tx, keyboard_refresh_rx) = std::sync::mpsc::channel::<()>();
+    let tray = tray::BatteryTray::new(
+        snapshot.clone(),
+        low_battery_threshold,
+        refresh_notify.clone(),
+        keyboard_refresh_tx.clone(),
+    );
+    let handle = tray::spawn(tray)
+        .await
+        .context("could not create system tray")?;
+
+    let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
+    let mut headset_ticker = interval(refresh);
+    headset_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+    // The HID side owns one dedicated blocking thread. It opens the HID device
+    // once and keeps it open, avoiding a fresh hidapi enumeration every poll.
+    let (keyboard_tx, mut keyboard_rx) = mpsc::unbounded_channel();
+    let _keyboard_worker = KeychronReader::new(config.keyboard.clone())?.spawn_worker(
+        refresh,
+        keyboard_tx,
+        keyboard_refresh_rx,
+    );
+
+    info!(
+        refresh_seconds = refresh.as_secs(),
+        low_battery_threshold,
+        runtime = "single-thread",
+        "dual-battery-tray started"
+    );
+
+    let mut current = Snapshot::default();
+    let mut last_sent = Snapshot::default();
+    let mut has_sent = false;
+    let mut low_battery = LowBatteryNotifier::default();
+
+    loop {
+        tokio::select! {
+            _ = headset_ticker.tick() => {
+                refresh_headset(&openlink, &mut current).await;
+                if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
+                    return Ok(());
+                }
+            }
+            _ = refresh_notify.notified() => {
+                refresh_headset(&openlink, &mut current).await;
+                if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
+                    return Ok(());
+                }
+            }
+            Some(value) = keyboard_rx.recv() => {
+                current.keyboard = value;
+                if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
 
-impl BatteryTray {
-    pub fn new(
-        snapshot: Snapshot,
-        low_battery_threshold: u8,
-        refresh_notify: Arc<Notify>,
-        keyboard_refresh_tx: Sender<()>,
-    ) -> Self {
-        Self {
-            snapshot,
-            low_battery_threshold,
-            refresh_notify,
-            keyboard_refresh_tx,
+async fn refresh_headset(openlink: &OpenLinkHubReader, current: &mut Snapshot) {
+    match openlink.read().await {
+        Ok(value) => current.headset = value,
+        Err(e) => {
+            warn!(error = %e, "OpenLinkHub read failed");
+            current.headset.error = Some(e.to_string());
         }
-    }
-
-    fn is_low(&self) -> bool {
-        is_below(self.snapshot.headset.percent, self.low_battery_threshold)
-            || is_below(self.snapshot.keyboard.percent, self.low_battery_threshold)
     }
 }
 
-impl Tray for BatteryTray {
-    const MENU_ON_ACTIVATE: bool = true;
+async fn update_if_changed(
+    handle: &ksni::Handle<tray::BatteryTray>,
+    current: &mut Snapshot,
+    last_sent: &mut Snapshot,
+    has_sent: &mut bool,
+    low_battery: &mut LowBatteryNotifier,
+    threshold: u8,
+) -> Option<()> {
+    low_battery
+    .check(&current.headset, &current.keyboard, threshold)
+    .await;
+        .check(&current.headset, &current.keyboard, threshold)
+        .await;
 
-    fn id(&self) -> String {
-        "dual-battery-tray".into()
-    }
-
-    fn category(&self) -> ksni::Category {
-        ksni::Category::Hardware
-    }
-
-    // Always keep the tray item active.
-    //
-    // Do NOT use NeedsAttention here because KDE Plasma may animate
-    // or otherwise highlight the tray icon.
-    fn status(&self) -> ksni::Status {
-        ksni::Status::Active
-    }
-
-    // Use the Breeze battery icon normally.
-    //
-    // When the battery is low, return an empty icon name so that the
-    // tray host falls back to our explicit red pixmap instead.
-    fn icon_name(&self) -> String {
-        if self.is_low() {
-            String::new()
-        } else {
-            "battery".into()
+    let changed = !*has_sent || last_sent != current;
+    if changed {
+        let next = current.clone();
+        if handle
+            .update(move |tray| tray.snapshot = next)
+            .await
+            .is_none()
+        {
+            error!("tray service has been shut down");
+            return Some(());
         }
+        *last_sent = current.clone();
+        *has_sent = true;
     }
 
-    // Prefer the installed Breeze-dark theme for the normal icon.
-    fn icon_theme_path(&self) -> String {
-        [
-            "/usr/share/icons/breeze-dark",
-            "/usr/local/share/icons/breeze-dark",
-        ]
-        .into_iter()
-        .find(|path| Path::new(path).is_dir())
-        .unwrap_or("")
-        .into()
+    None
+}
+
+async fn probe(config: &Config) -> Result<()> {
+    println!("== OpenLinkHub ==");
+    let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
+    match openlink.read().await {
+        Ok(value) => println!("{}", serde_json::to_string_pretty(&value)?),
+        Err(e) => println!("error: {e}"),
     }
 
-    // Explicit pixmap fallback.
-    //
-    // When the battery is low, use the bundled static red icon.
-    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        if self.is_low() {
-            icon::red()
-        } else {
-            icon::white()
-        }
+    println!("\n== Keychron HID ==");
+    let keychron = KeychronReader::new(config.keyboard.clone())?;
+    for line in keychron.probe()? {
+        println!("{line}");
     }
+    Ok(())
+}
 
-    fn title(&self) -> String {
-        format!(
-            "{} / {}",
-            fmt_pct(self.snapshot.headset.percent),
-            fmt_pct(self.snapshot.keyboard.percent)
+fn init_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "dual_battery_tray=info".into()),
         )
-    }
-
-    fn tool_tip(&self) -> ksni::ToolTip {
-        ksni::ToolTip {
-            title: "Dual Battery".into(),
-            description: format!(
-                "Headset: {}\nKeyboard: {}",
-                fmt_pct(self.snapshot.headset.percent),
-                fmt_pct(self.snapshot.keyboard.percent)
-            ),
-            ..Default::default()
-        }
-    }
-
-    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        let headset = StandardItem {
-            label: format!(
-                "Headset: {}{}",
-                fmt_pct(self.snapshot.headset.percent),
-                charging_suffix(self.snapshot.headset.charging)
-            ),
-            enabled: false,
-            ..Default::default()
-        };
-
-        let keyboard = StandardItem {
-            label: format!(
-                "Keychron K2 HE: {}{}",
-                fmt_pct(self.snapshot.keyboard.percent),
-                charging_suffix(self.snapshot.keyboard.charging)
-            ),
-            enabled: false,
-            ..Default::default()
-        };
-
-        let status = StandardItem {
-            label: self.status_line(),
-            enabled: false,
-            ..Default::default()
-        };
-
-        let refresh_notify = Arc::clone(&self.refresh_notify);
-        let keyboard_refresh_tx = self.keyboard_refresh_tx.clone();
-
-        let refresh = StandardItem {
-            label: "Force refresh".into(),
-            icon_name: "view-refresh".into(),
-            activate: Box::new(move |_| {
-                refresh_notify.notify_one();
-                let _ = keyboard_refresh_tx.send(());
-            }),
-            ..Default::default()
-        };
-
-        let quit = StandardItem {
-            label: "Quit".into(),
-            activate: Box::new(|_| std::process::exit(0)),
-            ..Default::default()
-        };
-
-        vec![
-            headset.into(),
-            keyboard.into(),
-            ksni::MenuItem::Separator,
-            status.into(),
-            ksni::MenuItem::Separator,
-            refresh.into(),
-            ksni::MenuItem::Separator,
-            quit.into(),
-        ]
-    }
+        .try_init();
 }
 
-pub async fn spawn(tray: BatteryTray) -> Result<ksni::Handle<BatteryTray>, ksni::Error> {
-    tray.spawn().await
+fn default_config_path() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(dirs_fallback)
+        .map(|base| base.join("dual-battery-tray/config.toml"))
 }
 
-impl BatteryTray {
-    fn status_line(&self) -> String {
-        let h = self
-            .snapshot
-            .headset
-            .error
-            .as_deref()
-            .unwrap_or("OpenLinkHub: OK");
-
-        let k = self
-            .snapshot
-            .keyboard
-            .error
-            .as_deref()
-            .unwrap_or("Keyboard: OK");
-
-        format!("{h} · {k}")
-    }
-}
-
-fn is_below(value: Option<u8>, threshold: u8) -> bool {
-    value.is_some_and(|p| p < threshold)
-}
-
-fn fmt_pct(value: Option<u8>) -> String {
-    value
-        .map(|v| format!("{v}%"))
-        .unwrap_or_else(|| "—".into())
-}
-
-fn charging_suffix(value: Option<bool>) -> &'static str {
-    if value == Some(true) {
-        " ⚡"
-    } else {
-        ""
-    }
+fn dirs_fallback() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config"))
 }
