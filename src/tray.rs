@@ -45,12 +45,10 @@ impl Tray for BatteryTray {
         ksni::Category::Hardware
     }
 
+    // Keep the tray item active at all times.
+    // Using NeedsAttention can cause KDE Plasma to animate/shake the icon.
     fn status(&self) -> ksni::Status {
-        if self.is_low() {
-            ksni::Status::NeedsAttention
-        } else {
-            ksni::Status::Active
-        }
+        ksni::Status::Active
     }
 
     // Let KDE/Breeze-dark provide the normal battery icon.
@@ -58,8 +56,9 @@ impl Tray for BatteryTray {
         "battery".into()
     }
 
-    // Prefer the installed Breeze-dark theme when it is present. This keeps the
-    // normal icon as KDE's own artwork instead of forcing a bundled redraw.
+    // Prefer the installed Breeze-dark theme when it is present.
+    // This keeps the normal icon as KDE's own artwork instead of forcing
+    // a bundled redraw.
     fn icon_theme_path(&self) -> String {
         [
             "/usr/share/icons/breeze-dark",
@@ -71,16 +70,15 @@ impl Tray for BatteryTray {
         .into()
     }
 
-    // ARGB pixmaps are retained as a fallback for tray hosts that do not load
-    // the themed icon.
+    // ARGB pixmaps are retained as a fallback for tray hosts that do not
+    // resolve the themed icon. When the battery is low, use the bundled
+    // red icon instead of NeedsAttention so the icon remains static.
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        icon::white()
-    }
-
-    // When low battery needs attention, provide an explicit red version so the
-    // visual state does not depend on the current desktop theme's warning color.
-    fn attention_icon_pixmap(&self) -> Vec<ksni::Icon> {
-        icon::red()
+        if self.is_low() {
+            icon::red()
+        } else {
+            icon::white()
+        }
     }
 
     fn title(&self) -> String {
@@ -113,6 +111,7 @@ impl Tray for BatteryTray {
             enabled: false,
             ..Default::default()
         };
+
         let keyboard = StandardItem {
             label: format!(
                 "Keychron K2 HE: {}{}",
@@ -122,13 +121,16 @@ impl Tray for BatteryTray {
             enabled: false,
             ..Default::default()
         };
+
         let status = StandardItem {
             label: self.status_line(),
             enabled: false,
             ..Default::default()
         };
+
         let refresh_notify = Arc::clone(&self.refresh_notify);
         let keyboard_refresh_tx = self.keyboard_refresh_tx.clone();
+
         let refresh = StandardItem {
             label: "Force refresh".into(),
             icon_name: "view-refresh".into(),
@@ -138,11 +140,13 @@ impl Tray for BatteryTray {
             }),
             ..Default::default()
         };
+
         let quit = StandardItem {
             label: "Quit".into(),
             activate: Box::new(|_| std::process::exit(0)),
             ..Default::default()
         };
+
         vec![
             headset.into(),
             keyboard.into(),
@@ -168,12 +172,14 @@ impl BatteryTray {
             .error
             .as_deref()
             .unwrap_or("OpenLinkHub: OK");
+
         let k = self
             .snapshot
             .keyboard
             .error
             .as_deref()
             .unwrap_or("Keyboard: OK");
+
         format!("{h} · {k}")
     }
 }
