@@ -120,8 +120,6 @@ async fn update_if_changed(
     threshold: u8,
 ) -> Option<()> {
     low_battery
-    .check(&current.headset, &current.keyboard, threshold)
-    .await;
         .check(&current.headset, &current.keyboard, threshold)
         .await;
 
