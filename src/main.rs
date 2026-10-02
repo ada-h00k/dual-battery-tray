@@ -208,15 +208,3 @@ fn charging_suffix(value: Option<bool>) -> &'static str {
         ""
     }
 }
-```
-
-Der relevante Wechsel ist:
-
-```rust
-fn icon_name(&self) -> String {
-    if self.is_low() {
-        String::new()
-    } else {
-        "battery".into()
-    }
-}
