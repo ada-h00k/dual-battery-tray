@@ -5,11 +5,11 @@
 `dual-battery-tray` is a small Linux tray application written in Rust. It monitors:
 
 - a Keychron K2 HE ISO RGB keyboard via raw HID / Keychron Link
-- a Corsair HS80 MAX WIRELESS headset via OpenLinkHub's `/api/systray` endpoint
+- a Logitech G PRO X 2 LIGHTSPEED headset via HeadsetControl's JSON output
 
 The process publishes both battery levels through a StatusNotifierItem/tray UI, supports a manual refresh action, and emits Linux/XDG desktop notifications for low battery.
 
-The project is deliberately lightweight: polling defaults to every 10 minutes, Tokio uses a single-threaded runtime, the OpenLinkHub HTTP client is reused, and the Keychron HID connection is kept open until an I/O error.
+The project is deliberately lightweight: polling defaults to every 10 minutes, Tokio uses a single-threaded runtime, HeadsetControl is invoked once per poll as a one-shot process, and the Keychron HID connection is kept open until an I/O error.
 
 ## Scope and working assumptions
 
@@ -69,7 +69,7 @@ Keep responsibilities separated:
 - `src/config.rs`: TOML deserialization, defaults, and bounded configuration accessors.
 - `src/state.rs`: small, serializable device-state/snapshot data structures shared by readers and the tray.
 - `src/keychron.rs`: raw HID device discovery, persistent HID worker, Keychron command transport, response parsing, and probe diagnostics.
-- `src/openlinkhub.rs`: OpenLinkHub HTTP access and recursive extraction/filtering of battery devices from `/api/systray` JSON.
+- `src/headsetcontrol.rs`: invocation of the external `headsetcontrol` binary and extraction of the battery device from its JSON output.
 - `src/notifications.rs`: low-battery notification state machine and desktop notifications.
 - `src/icon.rs`: bundled tray icon pixmap fallbacks.
 - `src/main.rs`: tray/status-menu behavior and user-facing presentation/integration.
@@ -95,19 +95,29 @@ The worker is intentionally persistent: keep the HID handle open between polls a
 
 Device discovery should keep the configured `hidraw_path` as a first attempt, then fall back to VID/PID/usage based discovery because `hidrawN` numbers are dynamic.
 
-## OpenLinkHub invariants
+## HeadsetControl invariants
 
-The headset reader calls:
+The headset reader invokes the external HeadsetControl binary:
 
 ```text
-GET {base_url}/api/systray
+{binary_path} -b -ojson
 ```
 
-The HTTP client is created once and reused.
+The attached form `-ojson` is intentional: older HeadsetControl versions declare `-o` with an optional argument, so `-o json` (separate argument) would not be parsed as the output format there.
 
-Device matching is optional. When `device_match` is configured, match case-insensitively against the device name. Parsed battery values must remain in the valid `0..=100` range.
+HeadsetControl is a one-shot CLI. Every read spawns a short-lived process; there is no daemon and no persistent connection. Each invocation runs under the configured timeout (`timeout_seconds`, clamped to 5..120 seconds) and the process is killed when the timeout fires.
 
-Do not assume a single fixed JSON shape unnecessarily: the current reader recursively walks arrays/objects and accepts common key spellings for device name, level, and charging state.
+HeadsetControl 4.x exits non-zero when no headset was found but still prints a valid JSON document (`device_count: 0`, empty `devices`). The parsed document therefore takes precedence over the exit status; the exit status is only used to enrich error messages with stderr output.
+
+Device matching is optional. When `device_match` is configured, match case-insensitively against the reported device name (`device`) and HID product string (`product`). Parsed battery values must remain in the valid `0..=100` range.
+
+Battery mapping:
+
+- `BATTERY_AVAILABLE` → exact percentage from `battery.level`, `charging = false`
+- `BATTERY_CHARGING` → percentage from `battery.level` when plausible, `charging = true` (a missing/implausible level must not hide the charging state)
+- `BATTERY_UNAVAILABLE`, `BATTERY_ERROR`, `BATTERY_TIMEOUT` and unknown statuses → explicit error, enriched with the message from the `errors` object when present
+
+Tolerate both output generations: 3.x and 4.x use `battery.level`, very old versions used `battery.charge`; accept either key. Do not tighten the parser to a single JSON shape.
 
 ## Configuration rules
 
@@ -117,8 +127,9 @@ Current defaults include:
 refresh_seconds = 600
 low_battery_threshold = 20
 
-[openlinkhub]
-base_url = "http://127.0.0.1:27003"
+[headsetcontrol]
+binary_path = "headsetcontrol"
+timeout_seconds = 15
 
 [keyboard]
 enabled = true
@@ -139,6 +150,8 @@ Important semantics:
 - low-battery thresholds above `100` are clamped to `100`
 - `keyboard.enabled = false` must leave the tray application usable without HID hardware
 - the configured `hidraw_path` is only a hint; paths can change after reconnects
+- `headsetcontrol.timeout_seconds` is clamped to 5..120; do not remove this bound
+- a missing or failing `headsetcontrol` binary must surface as a device error, never crash the tray
 
 Keep configuration backward compatible when practical. If a setting is renamed or its semantics change, update `config.toml.example` and the README in the same change.
 
@@ -191,24 +204,24 @@ Prioritize deterministic tests for logic that can be tested without hardware, es
 
 - configuration defaults and bounds
 - Keychron response parsing, including direct, wireless/XOR, report-id, truncated, and invalid-percentage cases
-- OpenLinkHub JSON extraction and optional device matching
+- HeadsetControl JSON extraction and optional device matching, including charging/unavailable statuses, the `charge` fallback for old versions, and error-message extraction
 - low-battery notification re-arming behavior
 - tray formatting helpers and low-battery threshold semantics
 
-Hardware-specific tests should be isolated so ordinary `cargo test` does not require a connected Keychron/Corsair setup.
+Hardware-specific tests should be isolated so ordinary `cargo test` does not require a connected Keychron/Logitech setup.
 
 When modifying HID protocol code, add or update parser tests before relying on manual hardware verification.
 
 ## Performance and resource usage
 
-Do not introduce a tighter default polling loop, busy-waiting, repeated HTTP client creation, or repeated HID enumeration on every successful poll.
+Do not introduce a tighter default polling loop, busy-waiting, multiple HeadsetControl invocations per poll, or repeated HID enumeration on every successful poll.
 
 Preserve the current low-overhead design:
 
 - 10-minute default polling interval
 - persistent Keychron HID connection
 - re-enumeration only after I/O failure
-- one reused OpenLinkHub HTTP client
+- one HeadsetControl invocation per headset poll (one-shot process, no daemon)
 - single-threaded Tokio runtime
 - tray updates only when state/status actually changes
 

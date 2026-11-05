@@ -14,17 +14,12 @@ impl LowBatteryNotifier {
     pub async fn check(&mut self, headset: &DeviceState, keyboard: &DeviceState, threshold: u8) {
         if let Some(percent) = headset.percent {
             let should_notify = percent < threshold && !self.headset_notified;
-
-            if percent < threshold {
-                self.headset_notified = true;
-            } else {
-                self.headset_notified = false;
-            }
-
+            self.headset_notified = percent < threshold;
             if should_notify {
-                if let Err(error) = notify_low_battery("Headset", percent).await {
+                let label = headset.display_name("Headset").to_string();
+                if let Err(error) = notify_low_battery(&label, percent).await {
                     warn!(
-                        device = "Headset",
+                        device = %label,
                         %error,
                         "could not show low-battery notification"
                     );
@@ -34,17 +29,12 @@ impl LowBatteryNotifier {
 
         if let Some(percent) = keyboard.percent {
             let should_notify = percent < threshold && !self.keyboard_notified;
-
-            if percent < threshold {
-                self.keyboard_notified = true;
-            } else {
-                self.keyboard_notified = false;
-            }
-
+            self.keyboard_notified = percent < threshold;
             if should_notify {
-                if let Err(error) = notify_low_battery("Keychron K2 HE", percent).await {
+                let label = keyboard.display_name("Keyboard").to_string();
+                if let Err(error) = notify_low_battery(&label, percent).await {
                     warn!(
-                        device = "Keychron K2 HE",
+                        device = %label,
                         %error,
                         "could not show low-battery notification"
                     );

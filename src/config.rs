@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -11,17 +12,26 @@ pub struct Config {
     #[serde(default = "default_low_battery_threshold")]
     pub low_battery_threshold: u8,
     #[serde(default)]
-    pub openlinkhub: OpenLinkHubConfig,
+    pub headsetcontrol: HeadsetControlConfig,
     #[serde(default)]
     pub keyboard: KeyboardConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct OpenLinkHubConfig {
-    #[serde(default = "default_base_url")]
-    pub base_url: String,
+pub struct HeadsetControlConfig {
+    #[serde(default = "default_headsetcontrol_binary")]
+    pub binary_path: String,
     #[serde(default)]
     pub device_match: Option<String>,
+    #[serde(default = "default_headsetcontrol_timeout")]
+    pub timeout_seconds: u64,
+}
+
+impl HeadsetControlConfig {
+    /// Effective per-invocation timeout for the headsetcontrol process.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_seconds.clamp(5, 120))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,17 +85,18 @@ impl Default for Config {
         Self {
             refresh_seconds: default_refresh(),
             low_battery_threshold: default_low_battery_threshold(),
-            openlinkhub: OpenLinkHubConfig::default(),
+            headsetcontrol: HeadsetControlConfig::default(),
             keyboard: KeyboardConfig::default(),
         }
     }
 }
 
-impl Default for OpenLinkHubConfig {
+impl Default for HeadsetControlConfig {
     fn default() -> Self {
         Self {
-            base_url: default_base_url(),
+            binary_path: default_headsetcontrol_binary(),
             device_match: None,
+            timeout_seconds: default_headsetcontrol_timeout(),
         }
     }
 }
@@ -113,8 +124,11 @@ fn default_refresh() -> u64 {
 fn default_low_battery_threshold() -> u8 {
     DEFAULT_LOW_BATTERY_THRESHOLD
 }
-fn default_base_url() -> String {
-    "http://127.0.0.1:27003".into()
+fn default_headsetcontrol_binary() -> String {
+    "headsetcontrol".into()
+}
+fn default_headsetcontrol_timeout() -> u64 {
+    15
 }
 fn default_true() -> bool {
     true

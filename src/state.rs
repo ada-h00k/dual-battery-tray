@@ -8,6 +8,17 @@ pub struct DeviceState {
     pub error: Option<String>,
 }
 
+impl DeviceState {
+    /// The reader-provided device name, or `fallback` when it is unset/blank.
+    pub fn display_name(&self, fallback: &str) -> String {
+        if self.name.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub headset: DeviceState,

@@ -1,16 +1,16 @@
 mod config;
+mod headsetcontrol;
 mod icon;
 mod keychron;
 mod notifications;
-mod openlinkhub;
 mod state;
 mod tray;
 
 use anyhow::{Context, Result};
 use config::Config;
+use headsetcontrol::HeadsetControlReader;
 use keychron::KeychronReader;
 use notifications::LowBatteryNotifier;
-use openlinkhub::OpenLinkHubReader;
 use state::Snapshot;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         .await
         .context("could not create system tray")?;
 
-    let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
+    let headset = HeadsetControlReader::new(config.headsetcontrol.clone())?;
     let mut headset_ticker = interval(refresh);
     headset_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -80,13 +80,13 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             _ = headset_ticker.tick() => {
-                refresh_headset(&openlink, &mut current).await;
+                refresh_headset(&headset, &mut current).await;
                 if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
                     return Ok(());
                 }
             }
             _ = refresh_notify.notified() => {
-                refresh_headset(&openlink, &mut current).await;
+                refresh_headset(&headset, &mut current).await;
                 if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
                     return Ok(());
                 }
@@ -101,11 +101,11 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn refresh_headset(openlink: &OpenLinkHubReader, current: &mut Snapshot) {
-    match openlink.read().await {
+async fn refresh_headset(headset: &HeadsetControlReader, current: &mut Snapshot) {
+    match headset.read().await {
         Ok(value) => current.headset = value,
         Err(e) => {
-            warn!(error = %e, "OpenLinkHub read failed");
+            warn!(error = %e, "HeadsetControl read failed");
             current.headset.error = Some(e.to_string());
         }
     }
@@ -142,9 +142,10 @@ async fn update_if_changed(
 }
 
 async fn probe(config: &Config) -> Result<()> {
-    println!("== OpenLinkHub ==");
-    let openlink = OpenLinkHubReader::new(config.openlinkhub.clone())?;
-    match openlink.read().await {
+    println!("== HeadsetControl ==");
+    println!("binary: {}", config.headsetcontrol.binary_path);
+    let headset = HeadsetControlReader::new(config.headsetcontrol.clone())?;
+    match headset.read().await {
         Ok(value) => println!("{}", serde_json::to_string_pretty(&value)?),
         Err(e) => println!("error: {e}"),
     }

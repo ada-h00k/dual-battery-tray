@@ -1,6 +1,6 @@
 # dual-battery-tray
 
-A lightweight Rust/Linux tray application that monitors the battery levels of a **Keychron K2 HE ISO RGB** keyboard and a **Corsair HS80 MAX WIRELESS** headset.
+A lightweight Rust/Linux tray application that monitors the battery levels of a **Keychron K2 HE ISO RGB** keyboard and a **Logitech G PRO X 2 LIGHTSPEED** headset.
 
 The application runs as a single background process, displays both battery levels in the tray menu, and uses the standard **Breeze/Breeze-dark battery icon** where available.
 
@@ -8,7 +8,7 @@ A native Linux/XDG desktop notification is shown when either device drops **stri
 
 ## Resource usage
 
-The application polls both devices only once every 10 minutes by default. The OpenLinkHub connection reuses a single HTTP client. The Keychron Link HID channel is kept open in one dedicated thread and is reopened only after an I/O error. The tray is updated only when the battery value or status actually changes. Tokio runs as a single-threaded runtime.
+The application polls both devices only once every 10 minutes by default. The headset battery is queried by invoking the `headsetcontrol` binary once per poll; there is no daemon or persistent connection. The Keychron Link HID channel is kept open in one dedicated thread and is reopened only after an I/O error. The tray is updated only when the battery value or status actually changes. Tokio runs as a single-threaded runtime.
 
 The polling interval can be changed with `refresh_seconds`; values below 60 seconds are rejected.
 
@@ -29,6 +29,10 @@ The threshold can be changed in `~/.config/dual-battery-tray/config.toml`.
 ## Supported hardware
 
 ```text
+Headset: Logitech G PRO X 2 LIGHTSPEED
+Headset VID/PID: 046d:0af7 (Logitech LIGHTSPEED USB receiver)
+Connection: LIGHTSPEED 2.4 GHz dongle
+Battery source: HeadsetControl
 Keyboard: Keychron K2 HE ISO RGB
 Keyboard VID/PID: 3434:0E21
 2.4 GHz receiver: Keychron Link
@@ -41,17 +45,29 @@ The K2 HE battery is queried using the Raw HID command `0xAC` provided by the [`
 
 With the tested setup, the receiver returned `84 43 ...` for a battery query. The first byte is the wireless-transport encoded command response and `0x43` represents **67%** battery.
 
-## OpenLinkHub
+## HeadsetControl
 
-The headset battery level is read from OpenLinkHub's `/api/systray` endpoint.
+The headset battery level is queried with the external [`HeadsetControl`](https://github.com/Sapd/HeadsetControl) tool:
+
+```bash
+headsetcontrol -b
+```
+
+Install HeadsetControl first (package `headsetcontrol`, a release tarball, or built from source) and verify that the command above reports the G PRO X 2. Its udev rules are required so the tray user can access the device; HeadsetControl ships them (`make install` or `headsetcontrol -u`).
+
+The tray application invokes `headsetcontrol -b -ojson` and parses the JSON battery status (`BATTERY_AVAILABLE`, `BATTERY_CHARGING`, `BATTERY_UNAVAILABLE`, ...). Output from both HeadsetControl 3.x and 4.x is supported.
 
 Example configuration:
 
 ```toml
-[openlinkhub]
-base_url = "http://127.0.0.1:27003"
-device_match = "HS80"
+[headsetcontrol]
+binary_path = "headsetcontrol"
+# Optional: only use the device whose name contains this text.
+# device_match = "G PRO X 2"
+timeout_seconds = 15
 ```
+
+If `headsetcontrol` is not in the `PATH` of the systemd user session, set `binary_path` to an absolute path (for example `/usr/local/bin/headsetcontrol`).
 
 ## Installation
 
@@ -109,6 +125,8 @@ sudo udevadm trigger
 ```
 
 `hidrawN` device numbers are dynamic. The application tries the configured path first and then searches automatically by receiver VID/PID and HID usage.
+
+HeadsetControl brings its own udev rules for the Logitech receiver; install them as part of the HeadsetControl setup (`headsetcontrol -u` prints them).
 
 ## Tray icon
 

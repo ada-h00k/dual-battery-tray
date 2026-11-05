@@ -5,10 +5,14 @@ refresh_seconds = 600
 # A notification is sent once per low-battery episode and re-armed at/above the threshold.
 low_battery_threshold = 20
 
-[openlinkhub]
-base_url = "http://127.0.0.1:27003"
-# Optional: only use the OpenLinkHub device whose name contains this text.
-# device_match = "HS80"
+[headsetcontrol]
+# HeadsetControl binary. Either a name resolved via PATH or an absolute path.
+binary_path = "headsetcontrol"
+# Optional: only use the HeadsetControl device whose name contains this text
+# (matched case-insensitively against the device and product name).
+# device_match = "G PRO X 2"
+# Timeout in seconds for a single headsetcontrol invocation (clamped to 5..120).
+timeout_seconds = 15
 
 [keyboard]
 enabled = true

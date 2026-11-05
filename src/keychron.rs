@@ -319,6 +319,10 @@ fn hex(bytes: &[u8]) -> String {
         .join(" ")
 }
 
+struct BatteryResponse {
+    percent: u8,
+}
+
 #[cfg(test)]
 mod tests {
     use super::KeychronReader;
@@ -344,8 +348,4 @@ mod tests {
         let value = KeychronReader::parse_battery_response(&response).unwrap();
         assert_eq!(value.percent, 67);
     }
-}
-
-struct BatteryResponse {
-    percent: u8,
 }

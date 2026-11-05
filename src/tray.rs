@@ -95,8 +95,10 @@ impl Tray for BatteryTray {
         ksni::ToolTip {
             title: "Dual Battery".into(),
             description: format!(
-                "Headset: {}\nKeyboard: {}",
+                "{}: {}\n{}: {}",
+                self.snapshot.headset.display_name("Headset"),
                 fmt_pct(self.snapshot.headset.percent),
+                self.snapshot.keyboard.display_name("Keyboard"),
                 fmt_pct(self.snapshot.keyboard.percent)
             ),
             ..Default::default()
@@ -106,7 +108,8 @@ impl Tray for BatteryTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         let headset = StandardItem {
             label: format!(
-                "Headset: {}{}",
+                "{}: {}{}",
+                self.snapshot.headset.display_name("Headset"),
                 fmt_pct(self.snapshot.headset.percent),
                 charging_suffix(self.snapshot.headset.charging)
             ),
@@ -115,7 +118,8 @@ impl Tray for BatteryTray {
         };
         let keyboard = StandardItem {
             label: format!(
-                "Keychron K2 HE: {}{}",
+                "{}: {}{}",
+                self.snapshot.keyboard.display_name("Keychron K2 HE"),
                 fmt_pct(self.snapshot.keyboard.percent),
                 charging_suffix(self.snapshot.keyboard.charging)
             ),
@@ -167,7 +171,7 @@ impl BatteryTray {
             .headset
             .error
             .as_deref()
-            .unwrap_or("OpenLinkHub: OK");
+            .unwrap_or("Headset: OK");
         let k = self
             .snapshot
             .keyboard
