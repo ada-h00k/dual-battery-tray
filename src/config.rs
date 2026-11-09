@@ -15,6 +15,8 @@ pub struct Config {
     pub headsetcontrol: HeadsetControlConfig,
     #[serde(default)]
     pub keyboard: KeyboardConfig,
+    #[serde(default)]
+    pub mouse: MouseConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,6 +60,44 @@ pub struct KeyboardConfig {
     pub timeout_ms: i32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct MouseConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_mouse_vid")]
+    pub vendor_id: u16,
+    #[serde(default = "default_mouse_receiver_pid")]
+    pub receiver_pid: u16,
+    #[serde(default = "default_mouse_wired_pids")]
+    pub wired_pids: Vec<u16>,
+    #[serde(default = "default_mouse_interface")]
+    pub interface_number: i32,
+    #[serde(default = "default_mouse_timeout_ms")]
+    pub timeout_ms: i32,
+    #[serde(default = "default_mouse_retries")]
+    pub retries: u32,
+    #[serde(default = "default_mouse_retry_delay_ms")]
+    pub retry_delay_ms: u64,
+}
+
+impl MouseConfig {
+    /// Effective per-attempt response timeout, clamped to 50..=5000 ms so a
+    /// zero/negative value cannot turn the poll into a busy loop.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms.clamp(50, 5000) as u64)
+    }
+
+    /// Query attempts per poll, clamped to 1..=10.
+    pub fn retries(&self) -> u32 {
+        self.retries.clamp(1, 10)
+    }
+
+    /// Pause between retry attempts, clamped to 0..=1000 ms.
+    pub fn retry_delay(&self) -> Duration {
+        Duration::from_millis(self.retry_delay_ms.min(1000))
+    }
+}
+
 impl Config {
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let Some(path) = path else {
@@ -87,6 +127,7 @@ impl Default for Config {
             low_battery_threshold: default_low_battery_threshold(),
             headsetcontrol: HeadsetControlConfig::default(),
             keyboard: KeyboardConfig::default(),
+            mouse: MouseConfig::default(),
         }
     }
 }
@@ -156,4 +197,98 @@ fn default_protocol() -> String {
 }
 fn default_timeout_ms() -> i32 {
     800
+}
+fn default_mouse_vid() -> u16 {
+    0x3434
+}
+fn default_mouse_receiver_pid() -> u16 {
+    0xD028
+}
+fn default_mouse_wired_pids() -> Vec<u16> {
+    vec![0xD048, 0xD049]
+}
+fn default_mouse_interface() -> i32 {
+    4
+}
+fn default_mouse_timeout_ms() -> i32 {
+    500
+}
+fn default_mouse_retries() -> u32 {
+    3
+}
+fn default_mouse_retry_delay_ms() -> u64 {
+    100
+}
+
+impl Default for MouseConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            vendor_id: default_mouse_vid(),
+            receiver_pid: default_mouse_receiver_pid(),
+            wired_pids: default_mouse_wired_pids(),
+            interface_number: default_mouse_interface(),
+            timeout_ms: default_mouse_timeout_ms(),
+            retries: default_mouse_retries(),
+            retry_delay_ms: default_mouse_retry_delay_ms(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn mouse_defaults_match_ultra_link_8k_protocol() {
+        let config = Config::default();
+        assert!(config.mouse.enabled);
+        assert_eq!(config.mouse.vendor_id, 0x3434);
+        assert_eq!(config.mouse.receiver_pid, 0xD028);
+        assert_eq!(config.mouse.wired_pids, vec![0xD048, 0xD049]);
+        assert_eq!(config.mouse.interface_number, 4);
+        assert_eq!(
+            config.mouse.timeout(),
+            std::time::Duration::from_millis(500)
+        );
+        assert_eq!(config.mouse.retries(), 3);
+        assert_eq!(
+            config.mouse.retry_delay(),
+            std::time::Duration::from_millis(100)
+        );
+    }
+
+    #[test]
+    fn partial_mouse_config_uses_defaults() {
+        let config: Config = toml::from_str("[mouse]\nenabled = false\n").unwrap();
+        assert!(!config.mouse.enabled);
+        assert_eq!(config.mouse.receiver_pid, 0xD028);
+        assert_eq!(config.mouse.interface_number, 4);
+    }
+
+    #[test]
+    fn mouse_timeout_is_clamped() {
+        let config: Config = toml::from_str("[mouse]\ntimeout_ms = 0\n").unwrap();
+        assert_eq!(config.mouse.timeout(), std::time::Duration::from_millis(50));
+        let config: Config = toml::from_str("[mouse]\ntimeout_ms = 90000\n").unwrap();
+        assert_eq!(
+            config.mouse.timeout(),
+            std::time::Duration::from_millis(5000)
+        );
+    }
+
+    #[test]
+    fn mouse_retries_are_clamped() {
+        let config: Config = toml::from_str("[mouse]\nretries = 0\n").unwrap();
+        assert_eq!(config.mouse.retries(), 1);
+        let config: Config = toml::from_str("[mouse]\nretries = 99\n").unwrap();
+        assert_eq!(config.mouse.retries(), 10);
+    }
+
+    #[test]
+    fn mouse_config_without_section_defaults_to_enabled() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.mouse.enabled);
+        assert!(config.keyboard.enabled);
+    }
 }

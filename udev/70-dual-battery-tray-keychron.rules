@@ -1,7 +1,11 @@
-# Keychron K2 HE + Keychron Link raw HID access for the active desktop user.
+# Keychron K2 HE + Keychron Link raw HID access for the active desktop user,
+# plus the Keychron M5/M6 8K mice and the Ultra-Link 8K receiver (vendor HID).
 # Keep this file before systemd's 73-seat-late.rules so TAG+="uaccess" is consumed.
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="0e21", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d026", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d027", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d028", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d030", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d031", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d048", TAG+="uaccess"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3434", ATTRS{idProduct}=="d049", TAG+="uaccess"

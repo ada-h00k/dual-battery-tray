@@ -1,9 +1,9 @@
 [package]
 name = "dual-battery-tray"
-version = "6.1.0"
+version = "6.2.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Linux tray monitor for a HeadsetControl headset and a Keychron K2 HE over Keychron Link"
+description = "Linux tray monitor for a HeadsetControl headset, a Keychron K2 HE over Keychron Link and a Keychron M5 mouse over Ultra-Link 8K"
 license = "AGPL-3.0-or-later"
 
 [dependencies]

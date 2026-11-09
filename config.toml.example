@@ -33,3 +33,24 @@ hidraw_path = "/dev/hidraw5"
 # Keychron Link raw-HID traffic is XOR-encoded with 0x28 internally by the firmware.
 protocol = "keychron-ac"
 timeout_ms = 800
+
+[mouse]
+# Keychron M5 (and M6 8K) battery via the Ultra-Link 8K 2.4 GHz receiver's
+# vendor HID interface, or from the same mice connected by USB cable.
+enabled = true
+
+# The Ultra-Link 8K receiver has the same USB ID for every paired mouse.
+vendor_id = 0x3434
+receiver_pid = 0xD028
+# Mice queried directly when plugged in by cable (the wired device takes
+# over reporting while charging).
+wired_pids = [0xD048, 0xD049]
+
+# The vendor-specific HID interface on both receiver and mice.
+interface_number = 4
+
+# Per-attempt response timeout and retry count for one poll (a sleeping
+# mouse does not answer; the next poll retries).
+timeout_ms = 500
+retries = 3
+retry_delay_ms = 100

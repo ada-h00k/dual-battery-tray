@@ -23,4 +23,5 @@ impl DeviceState {
 pub struct Snapshot {
     pub headset: DeviceState,
     pub keyboard: DeviceState,
+    pub mouse: DeviceState,
 }
