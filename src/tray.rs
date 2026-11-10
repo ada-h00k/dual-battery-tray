@@ -11,6 +11,7 @@ pub struct BatteryTray {
     pub low_battery_threshold: u8,
     refresh_notify: Arc<Notify>,
     keyboard_refresh_tx: Sender<()>,
+    mouse_refresh_tx: Sender<()>,
 }
 
 impl BatteryTray {
@@ -19,18 +20,21 @@ impl BatteryTray {
         low_battery_threshold: u8,
         refresh_notify: Arc<Notify>,
         keyboard_refresh_tx: Sender<()>,
+        mouse_refresh_tx: Sender<()>,
     ) -> Self {
         Self {
             snapshot,
             low_battery_threshold,
             refresh_notify,
             keyboard_refresh_tx,
+            mouse_refresh_tx,
         }
     }
 
     fn is_low(&self) -> bool {
         is_below(self.snapshot.headset.percent, self.low_battery_threshold)
             || is_below(self.snapshot.keyboard.percent, self.low_battery_threshold)
+            || is_below(self.snapshot.mouse.percent, self.low_battery_threshold)
     }
 }
 
@@ -85,9 +89,10 @@ impl Tray for BatteryTray {
 
     fn title(&self) -> String {
         format!(
-            "{} / {}",
+            "{} / {} / {}",
             fmt_pct(self.snapshot.headset.percent),
-            fmt_pct(self.snapshot.keyboard.percent)
+            fmt_pct(self.snapshot.keyboard.percent),
+            fmt_pct(self.snapshot.mouse.percent)
         )
     }
 
@@ -95,11 +100,13 @@ impl Tray for BatteryTray {
         ksni::ToolTip {
             title: "Dual Battery".into(),
             description: format!(
-                "{}: {}\n{}: {}",
+                "{}: {}\n{}: {}\n{}: {}",
                 self.snapshot.headset.display_name("Headset"),
                 fmt_pct(self.snapshot.headset.percent),
-                self.snapshot.keyboard.display_name("Keyboard"),
-                fmt_pct(self.snapshot.keyboard.percent)
+                self.snapshot.keyboard.display_name("Keychron K2 HE"),
+                fmt_pct(self.snapshot.keyboard.percent),
+                self.snapshot.mouse.display_name("Keychron M5"),
+                fmt_pct(self.snapshot.mouse.percent)
             ),
             ..Default::default()
         }
@@ -126,6 +133,16 @@ impl Tray for BatteryTray {
             enabled: false,
             ..Default::default()
         };
+        let mouse = StandardItem {
+            label: format!(
+                "{}: {}{}",
+                self.snapshot.mouse.display_name("Keychron M5"),
+                fmt_pct(self.snapshot.mouse.percent),
+                charging_suffix(self.snapshot.mouse.charging)
+            ),
+            enabled: false,
+            ..Default::default()
+        };
         let status = StandardItem {
             label: self.status_line(),
             enabled: false,
@@ -133,12 +150,14 @@ impl Tray for BatteryTray {
         };
         let refresh_notify = Arc::clone(&self.refresh_notify);
         let keyboard_refresh_tx = self.keyboard_refresh_tx.clone();
+        let mouse_refresh_tx = self.mouse_refresh_tx.clone();
         let refresh = StandardItem {
             label: "Force refresh".into(),
             icon_name: "view-refresh".into(),
             activate: Box::new(move |_| {
                 refresh_notify.notify_one();
                 let _ = keyboard_refresh_tx.send(());
+                let _ = mouse_refresh_tx.send(());
             }),
             ..Default::default()
         };
@@ -150,6 +169,7 @@ impl Tray for BatteryTray {
         vec![
             headset.into(),
             keyboard.into(),
+            mouse.into(),
             ksni::MenuItem::Separator,
             status.into(),
             ksni::MenuItem::Separator,
@@ -178,7 +198,8 @@ impl BatteryTray {
             .error
             .as_deref()
             .unwrap_or("Keyboard: OK");
-        format!("{h} · {k}")
+        let m = self.snapshot.mouse.error.as_deref().unwrap_or("Mouse: OK");
+        format!("{h} · {k} · {m}")
     }
 }
 

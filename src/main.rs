@@ -2,6 +2,7 @@ mod config;
 mod headsetcontrol;
 mod icon;
 mod keychron;
+mod mouse;
 mod notifications;
 mod state;
 mod tray;
@@ -10,6 +11,7 @@ use anyhow::{Context, Result};
 use config::Config;
 use headsetcontrol::HeadsetControlReader;
 use keychron::KeychronReader;
+use mouse::MouseReader;
 use notifications::LowBatteryNotifier;
 use state::Snapshot;
 use std::path::PathBuf;
@@ -42,11 +44,13 @@ async fn main() -> Result<()> {
     let snapshot = Snapshot::default();
     let refresh_notify = Arc::new(Notify::new());
     let (keyboard_refresh_tx, keyboard_refresh_rx) = std::sync::mpsc::channel::<()>();
+    let (mouse_refresh_tx, mouse_refresh_rx) = std::sync::mpsc::channel::<()>();
     let tray = tray::BatteryTray::new(
         snapshot.clone(),
         low_battery_threshold,
         refresh_notify.clone(),
         keyboard_refresh_tx.clone(),
+        mouse_refresh_tx.clone(),
     );
     let handle = tray::spawn(tray)
         .await
@@ -64,6 +68,13 @@ async fn main() -> Result<()> {
         keyboard_tx,
         keyboard_refresh_rx,
     );
+
+    // The mouse reader uses the same persistent-worker pattern: one blocking
+    // thread, one HID handle, re-opened only after an I/O failure. A sleeping
+    // mouse simply times out and keeps the connection.
+    let (mouse_tx, mut mouse_rx) = mpsc::unbounded_channel();
+    let _mouse_worker =
+        MouseReader::new(config.mouse.clone())?.spawn_worker(refresh, mouse_tx, mouse_refresh_rx);
 
     info!(
         refresh_seconds = refresh.as_secs(),
@@ -97,6 +108,12 @@ async fn main() -> Result<()> {
                     return Ok(());
                 }
             }
+            Some(value) = mouse_rx.recv() => {
+                current.mouse = value;
+                if update_if_changed(&handle, &mut current, &mut last_sent, &mut has_sent, &mut low_battery, low_battery_threshold).await.is_some() {
+                    return Ok(());
+                }
+            }
         }
     }
 }
@@ -120,7 +137,12 @@ async fn update_if_changed(
     threshold: u8,
 ) -> Option<()> {
     low_battery
-        .check(&current.headset, &current.keyboard, threshold)
+        .check(
+            &current.headset,
+            &current.keyboard,
+            &current.mouse,
+            threshold,
+        )
         .await;
 
     let changed = !*has_sent || last_sent != current;
@@ -153,6 +175,12 @@ async fn probe(config: &Config) -> Result<()> {
     println!("\n== Keychron HID ==");
     let keychron = KeychronReader::new(config.keyboard.clone())?;
     for line in keychron.probe()? {
+        println!("{line}");
+    }
+
+    println!("\n== Keychron mouse (Ultra-Link 8K / wired) ==");
+    let mouse = MouseReader::new(config.mouse.clone())?;
+    for line in mouse.probe()? {
         println!("{line}");
     }
     Ok(())
